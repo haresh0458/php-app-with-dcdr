@@ -56,15 +56,20 @@ pipeline {
         stage('Deployment') {
             steps {
                 sh '''
-                docker stop ${CONTAINER_NAME}-old || true
-                docker rm ${CONTAINER_NAME}-old || true
+                # Remove previous backup if exists
+                docker rm -f ${CONTAINER_NAME}-old || true
 
+                # Stop current production container
+                docker stop ${CONTAINER_NAME} || true
+
+                # Rename current container as backup
                 docker rename ${CONTAINER_NAME} ${CONTAINER_NAME}-old || true
 
+                # Start new version
                 docker run -d \
-                  --name ${CONTAINER_NAME} \
-                  -p ${PORT}:80 \
-                  ${APP_NAME}:${BUILD_NUMBER}
+                    --name ${CONTAINER_NAME} \
+                    -p ${PORT}:80 \
+                    ${APP_NAME}:${BUILD_NUMBER}
                 '''
             }
         }
@@ -83,7 +88,7 @@ pipeline {
     post {
 
         success {
-            echo 'Deployment Successful'
+            echo "Deployment Successful"
 
             sh '''
             docker rm -f ${CONTAINER_NAME}-old || true
@@ -91,14 +96,16 @@ pipeline {
         }
 
         failure {
-            echo 'Deployment Failed - Starting Rollback'
+            echo "Deployment Failed - Starting Rollback"
 
             sh '''
-            docker stop ${CONTAINER_NAME} || true
-            docker rm ${CONTAINER_NAME} || true
+            # Remove failed deployment
+            docker rm -f ${CONTAINER_NAME} || true
 
+            # Restore previous container
             docker rename ${CONTAINER_NAME}-old ${CONTAINER_NAME} || true
 
+            # Start previous version
             docker start ${CONTAINER_NAME} || true
             '''
         }
