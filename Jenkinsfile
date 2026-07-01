@@ -23,6 +23,8 @@ pipeline {
 
                 echo "Code checked out from GitHub"
 
+                sh "ls -la"
+
             }
 
         }
@@ -38,7 +40,7 @@ pipeline {
                 if [ -f composer.json ]; then
 
                     docker run --rm \
-                    -v $(pwd):/app \
+                    -v /var/jenkins_home/workspace/php-app-pipeline:/app \
                     -w /app \
                     composer:latest \
                     composer install
@@ -64,7 +66,7 @@ pipeline {
                 sh '''
 
                 docker run --rm \
-                -v $(pwd):/app \
+                -v /var/jenkins_home/workspace/php-app-pipeline:/app \
                 -w /app \
                 php:8.3-cli \
                 php -l index.php
@@ -94,22 +96,19 @@ pipeline {
 
 
 
-
         stage('Trivy Security Scan') {
 
             steps {
 
                 sh '''
 
-                trivy image \
-                ${APP_NAME}:${BUILD_NUMBER} || true
+                trivy image ${APP_NAME}:${BUILD_NUMBER} || true
 
                 '''
 
             }
 
         }
-
 
 
 
@@ -122,7 +121,8 @@ pipeline {
 
                 docker stop ${CONTAINER_NAME} || true
 
-                docker rename ${CONTAINER_NAME} ${CONTAINER_NAME}-old || true
+
+                docker rm ${CONTAINER_NAME} || true
 
 
 
@@ -137,6 +137,7 @@ pipeline {
             }
 
         }
+
 
 
 
@@ -171,12 +172,6 @@ pipeline {
 
             echo "Deployment Successful"
 
-            sh '''
-
-            docker rm -f ${CONTAINER_NAME}-old || true
-
-            '''
-
         }
 
 
@@ -184,7 +179,7 @@ pipeline {
         failure {
 
 
-            echo "Deployment Failed - Rolling Back"
+            echo "Deployment Failed"
 
 
             sh '''
@@ -192,12 +187,6 @@ pipeline {
             docker stop ${CONTAINER_NAME} || true
 
             docker rm ${CONTAINER_NAME} || true
-
-
-            docker rename ${CONTAINER_NAME}-old ${CONTAINER_NAME} || true
-
-
-            docker start ${CONTAINER_NAME} || true
 
 
             '''
