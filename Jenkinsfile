@@ -1,199 +1,106 @@
 pipeline {
-
     agent any
 
-
     environment {
-
         APP_NAME = "php-app"
-
         CONTAINER_NAME = "php-production"
-
         PORT = "8083"
-
     }
-
 
     stages {
 
-
         stage('Source Checkout') {
-
             steps {
-
-                echo "Code checked out from GitHub"
-
-                sh "ls -la"
-
+                checkout scm
+                sh 'pwd'
+                sh 'ls -la'
             }
-
         }
-
-
 
         stage('Composer Install') {
-
             steps {
-
                 sh '''
-
                 if [ -f composer.json ]; then
-
-                    docker run --rm \
-                    -v /var/jenkins_home/workspace/php-app-pipeline:/app \
-                    -w /app \
-                    composer:latest \
-                    composer install
-
+                    composer install --no-interaction --prefer-dist --no-progress
                 else
-
-                    echo "No composer.json found"
-
+                    echo "composer.json not found. Skipping Composer Install."
                 fi
-
                 '''
-
             }
-
         }
-
-
 
         stage('PHP Syntax Validation') {
-
             steps {
-
                 sh '''
-
-                docker run --rm \
-                -v /var/jenkins_home/workspace/php-app-pipeline:/app \
-                -w /app \
-                php:8.3-cli \
                 php -l index.php
-
                 '''
-
             }
-
         }
-
-
 
         stage('Docker Image Build') {
-
             steps {
-
                 sh '''
-
-                docker build \
-                -t ${APP_NAME}:${BUILD_NUMBER} .
-
+                docker build -t ${APP_NAME}:${BUILD_NUMBER} .
                 '''
-
             }
-
         }
 
-
-
-        stage('Trivy Security Scan') {
-
+        stage('Trivy Scan') {
             steps {
-
                 sh '''
-
-                trivy image ${APP_NAME}:${BUILD_NUMBER} || true
-
+                trivy image --severity HIGH,CRITICAL ${APP_NAME}:${BUILD_NUMBER} || true
                 '''
-
             }
-
         }
-
-
-
 
         stage('Deployment') {
-
             steps {
-
                 sh '''
+                docker stop ${CONTAINER_NAME}-old || true
+                docker rm ${CONTAINER_NAME}-old || true
 
-                docker stop ${CONTAINER_NAME} || true
-
-
-                docker rm ${CONTAINER_NAME} || true
-
-
+                docker rename ${CONTAINER_NAME} ${CONTAINER_NAME}-old || true
 
                 docker run -d \
-                --name ${CONTAINER_NAME} \
-                -p ${PORT}:80 \
-                ${APP_NAME}:${BUILD_NUMBER}
-
-
+                  --name ${CONTAINER_NAME} \
+                  -p ${PORT}:80 \
+                  ${APP_NAME}:${BUILD_NUMBER}
                 '''
-
             }
-
         }
-
-
-
-
 
         stage('Health Verification') {
-
             steps {
-
                 sh '''
-
-                sleep 5
-
+                sleep 10
 
                 curl -f http://localhost:${PORT}
-
-
                 '''
-
             }
-
         }
-
-
     }
-
-
 
     post {
 
-
         success {
-
-            echo "Deployment Successful"
-
-        }
-
-
-
-        failure {
-
-
-            echo "Deployment Failed"
-
+            echo 'Deployment Successful'
 
             sh '''
-
-            docker stop ${CONTAINER_NAME} || true
-
-            docker rm ${CONTAINER_NAME} || true
-
-
+            docker rm -f ${CONTAINER_NAME}-old || true
             '''
-
         }
 
+        failure {
+            echo 'Deployment Failed - Starting Rollback'
 
+            sh '''
+            docker stop ${CONTAINER_NAME} || true
+            docker rm ${CONTAINER_NAME} || true
+
+            docker rename ${CONTAINER_NAME}-old ${CONTAINER_NAME} || true
+
+            docker start ${CONTAINER_NAME} || true
+            '''
+        }
     }
-
 }
