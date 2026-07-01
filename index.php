@@ -1,5 +1,5 @@
-<?ph
+<?php
 
-echo "PHP SERVER RUNNING : " . gethostname();
+echo "PHP SERVER RUNNING"
 
 ?>
